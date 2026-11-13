@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { hashPassword, verifyPassword, makeSessions } from './auth.js';
 import { attachRealtime } from './realtime.js';
+import { sanitizeLook, randomLook } from '../client/src/look.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT || 3000);
@@ -55,7 +56,8 @@ app.use(cookieParser());
 // --- auth helpers ---
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/i;
-const publicUser = (u) => ({ id: u.id, username: u.username, displayName: u.display_name, color: u.color, bio: u.bio });
+export const parseLook = (u) => { try { return sanitizeLook(JSON.parse(u.look)); } catch { return sanitizeLook(null); } };
+const publicUser = (u) => ({ id: u.id, username: u.username, displayName: u.display_name, color: u.color, bio: u.bio, look: parseLook(u) });
 function setSession(res, userId) {
   res.cookie('sid', sessions.issue(userId), { httpOnly: true, sameSite: 'lax', secure: IS_PROD, maxAge: sessions.maxAgeMs, path: '/' });
 }
@@ -65,11 +67,13 @@ function requireUser(req, res, next) {
   if (!u) return res.status(401).json({ error: 'Sign in to do that.' });
   req.user = u; next();
 }
-function cleanProfile(body, existing = {}) {
-  const displayName = String(body.displayName ?? existing.display_name ?? '').trim().slice(0, 24);
-  const color = COLOR_RE.test(body.color) ? body.color : (existing.color || '#4f8cff');
-  const bio = String(body.bio ?? existing.bio ?? '').trim().slice(0, 140);
-  return { displayName, color, bio };
+function cleanProfile(body, existing = null) {
+  const displayName = String(body.displayName ?? existing?.display_name ?? '').trim().slice(0, 24);
+  const bio = String(body.bio ?? existing?.bio ?? '').trim().slice(0, 140);
+  const look = sanitizeLook(body.look, existing ? parseLook(existing) : randomLook());
+  // `color` (minimap dot, name tag) follows the outfit
+  const color = COLOR_RE.test(look.topColor) ? look.topColor : '#4f8cff';
+  return { displayName, color, bio, look };
 }
 
 // Naive in-memory rate limit for auth endpoints (per IP).

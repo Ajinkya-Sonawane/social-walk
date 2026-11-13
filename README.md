@@ -5,12 +5,15 @@ Walk around a 3D Boston and Cambridge, run into other people in real time, and c
 - **Everyone** gets a 3D character on arrival and can roam the city, see everyone else live, and use the map to travel.
 - **Guests** can explore and watch, but can't interact.
 - **Members** (free account) can send a connection request to another member when they're standing near each other (within 30 m), accept or decline requests, wave (Q), and find their connections on the map ("Go to").
+- **Real names everywhere:** about 38,000 shops, restaurants and other places show up as signs as you walk past, named buildings are labelled on their rooftops, street signs show the streets around you, and the top bar shows the street you're on. The map has a search box ("Tatte", "Fenway Park"…) that takes you there.
+- **A more real-looking city:** sky with sun and soft shadows, buildings with brick, stone or glass facades and windows that reflect the sky, sidewalks and road markings, and the real positions of 11,600 street trees, 3,500 street lamps and 3,600 benches. Slow machines switch to a fast mode automatically (G toggles it).
+- **Your character:** a jointed figure with a face and a walk, run and idle animation. Pick skin tone, 7 hairstyles, hair colour, tee/hoodie/jacket and colours with the **Look** button (guests too).
 
-![Downtown Boston](docs/downtown.png)
+![Newbury Street with real shop names](docs/newbury.png)
 
 ## Run it locally
 
-Requires **Node.js 22.13 or newer** (it uses the built-in `node:sqlite`).
+Requires **Node.js 22** (any 22.x) or newer.
 
 ```bash
 npm install
@@ -48,15 +51,18 @@ To try the multiplayer side on one machine, open the site in two different brows
 ```
 client/            three.js + Vite front end
   src/world.js     builds the city meshes from data/city.json, plus a collision grid
-  src/avatar.js    original low-poly character built from primitives
+  src/avatar.js    original jointed character, animation, and the look-editor preview
+  src/look.js      appearance options and validation (shared with the server)
+  src/names.js     place/building/street name signs and place search
   src/main.js      game loop, camera, input, HUD, auth and connections UI
   src/minimap.js   minimap and full map with click-to-travel
   src/net.js       WebSocket client and fetch helper
-  public/data/city.json   preprocessed map (≈6 MB, ≈2 MB gzipped)
+  public/data/city.json     preprocessed map geometry (≈6 MB, ≈2 MB gzipped)
+  public/data/details.json  names, places, trees, lamps, benches (≈2.3 MB, ≈0.8 MB gzipped)
 server/
   index.js         Express API, static hosting, session cookies
   realtime.js      WebSocket presence (10 Hz snapshots) and in-world connection requests
-  db.js            SQLite schema and queries (users, connection_requests)
+  db.js            SQLite (better-sqlite3) schema and queries (users, connection_requests)
   auth.js          scrypt password hashing, HMAC-signed session tokens
 scripts/           Python pipeline that produced city.json from Overture Maps
 tests/             node:test end-to-end server test
@@ -77,7 +83,7 @@ tests/             node:test end-to-end server test
 
 ## Map data
 
-Buildings (with heights), roads, water and parks for roughly lon −71.13…−71.02, lat 42.33…42.395 come from the [Overture Maps](https://overturemaps.org) 2026-10-21 release, which is largely derived from OpenStreetMap. Data © OpenStreetMap contributors (ODbL) and Overture Maps Foundation; the attribution is shown in the app.
+Buildings (with heights, names and facade materials), roads and street names, water, parks, places (shops, restaurants…), trees and street furniture for roughly lon −71.13…−71.02, lat 42.33…42.395 come from the [Overture Maps](https://overturemaps.org) 2026-10-21 release, which is largely derived from OpenStreetMap. Data © OpenStreetMap contributors (ODbL) and Overture Maps Foundation; the attribution is shown in the app.
 
 To regenerate or change the area, edit the bounding box in `scripts/` and run (needs Python with `pyarrow` and `shapely`):
 
@@ -85,7 +91,8 @@ To regenerate or change the area, edit the bounding box in `scripts/` and run (n
 python3 scripts/scan.py      # finds the Overture building row groups covering the box
 python3 scripts/extract.py   # writes boston.parquet (update the row groups/file it prints)
 python3 scripts/scan2.py     # water, roads, land use
-python3 scripts/convert.py   # writes city.json -> copy to client/public/data/
+python3 scripts/scan3.py     # places, trees/street furniture, buildings with names
+python3 scripts/convert2.py  # writes city.json + details.json -> copy to client/public/data/
 ```
 
 ## Known limits and next steps

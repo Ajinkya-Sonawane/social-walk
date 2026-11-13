@@ -1,11 +1,11 @@
-// SQLite persistence via Node's built-in node:sqlite (Node 22.13+).
-import { DatabaseSync } from 'node:sqlite';
+// SQLite persistence (better-sqlite3, prebuilt binaries; works on any Node 22).
+import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export function openDb(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new DatabaseSync(file);
+  const db = new Database(file);
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -31,12 +31,14 @@ export function openDb(file) {
     CREATE INDEX IF NOT EXISTS idx_req_to ON connection_requests(to_id, status);
     CREATE INDEX IF NOT EXISTS idx_req_from ON connection_requests(from_id, status);
   `);
+  // migration: avatar appearance (JSON), added in v0.2
+  if (!db.prepare(`PRAGMA table_info(users)`).all().some((c) => c.name === 'look')) db.exec(`ALTER TABLE users ADD COLUMN look TEXT`);
 
   const q = {
-    insertUser: db.prepare(`INSERT INTO users (username, display_name, password_hash, color, bio, created_at) VALUES (?, ?, ?, ?, ?, ?)`),
+    insertUser: db.prepare(`INSERT INTO users (username, display_name, password_hash, color, bio, look, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`),
     userByName: db.prepare(`SELECT * FROM users WHERE username = ?`),
     userById: db.prepare(`SELECT * FROM users WHERE id = ?`),
-    updateProfile: db.prepare(`UPDATE users SET display_name = ?, color = ?, bio = ? WHERE id = ?`),
+    updateProfile: db.prepare(`UPDATE users SET display_name = ?, color = ?, bio = ?, look = ? WHERE id = ?`),
     savePos: db.prepare(`UPDATE users SET last_x = ?, last_z = ? WHERE id = ?`),
     // latest non-declined request in either direction between two users
     between: db.prepare(`SELECT * FROM connection_requests
@@ -58,13 +60,13 @@ export function openDb(file) {
 
   return {
     raw: db,
-    createUser({ username, displayName, passwordHash, color, bio }) {
-      const r = q.insertUser.run(username, displayName, passwordHash, color, bio, Date.now());
+    createUser({ username, displayName, passwordHash, color, bio, look }) {
+      const r = q.insertUser.run(username, displayName, passwordHash, color, bio, JSON.stringify(look), Date.now());
       return q.userById.get(Number(r.lastInsertRowid));
     },
     userByName: (n) => q.userByName.get(n),
     userById: (id) => q.userById.get(id),
-    updateProfile: (id, { displayName, color, bio }) => q.updateProfile.run(displayName, color, bio, id),
+    updateProfile: (id, { displayName, color, bio, look }) => q.updateProfile.run(displayName, color, bio, JSON.stringify(look), id),
     savePosition: (id, x, z) => q.savePos.run(x, z, id),
     relationBetween: (a, b) => q.between.get(a, b, b, a),
     createRequest: (from, to, place) => q.reqById.get(Number(q.insertReq.run(from, to, place, Date.now()).lastInsertRowid)),
