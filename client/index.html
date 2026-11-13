@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Social Web · Boston</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="scene"></div>
+  <div id="labels"></div>
+
+  <!-- Loading -->
+  <div id="loading" class="screen">
+    <div class="loading-card">
+      <div class="brand">Social Web</div>
+      <div class="sub">Boston &amp; Cambridge</div>
+      <div class="bar"><div id="loadbar"></div></div>
+      <div id="loadtext" class="muted">Starting…</div>
+    </div>
+  </div>
+
+  <!-- Welcome / auth -->
+  <div id="welcome" class="screen hidden">
+    <div class="card welcome-card">
+      <div class="brand">Social Web</div>
+      <p class="lede">Walk around Boston and Cambridge in 3D, run into people, and connect with the ones you meet.</p>
+      <div class="tabs">
+        <button class="tab active" data-tab="login">Sign in</button>
+        <button class="tab" data-tab="register">Create account</button>
+      </div>
+      <form id="login-form" class="form">
+        <label>Username<input name="username" autocomplete="username" required /></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+      <form id="register-form" class="form hidden">
+        <label>Username<input name="username" autocomplete="username" pattern="[A-Za-z0-9_]{3,20}" title="3–20 letters, numbers or underscores" required /></label>
+        <label>Display name<input name="displayName" maxlength="24" required /></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
+        <label>One-line bio <span class="muted">(optional)</span><input name="bio" maxlength="140" placeholder="e.g. Grad student at MIT, into climbing" /></label>
+        <label class="color-row">Your colour<input name="color" type="color" value="#4f8cff" /></label>
+        <button class="primary" type="submit">Create account &amp; enter</button>
+      </form>
+      <div id="auth-error" class="error"></div>
+      <div class="divider"><span>or</span></div>
+      <button id="guest-btn" class="secondary">Explore as a guest</button>
+      <p class="muted small">Guests can roam and see everyone in real time, but can't connect with people.</p>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="topbar">
+      <div class="me">
+        <span id="me-dot" class="dot"></span>
+        <span id="me-name"></span>
+        <span id="me-badge" class="badge"></span>
+      </div>
+      <div id="place" class="place"></div>
+      <div class="actions">
+        <span id="online" class="pill"></span>
+        <button id="map-btn" title="Map (M)">Map</button>
+        <button id="social-btn" title="Connections (C)">Connections <span id="req-count" class="count hidden"></span></button>
+        <button id="account-btn"></button>
+      </div>
+    </div>
+
+    <div id="nearby" class="panel nearby hidden">
+      <div class="panel-title">Nearby <span class="muted small">(within <span id="radius"></span> m)</span></div>
+      <div id="nearby-list"></div>
+    </div>
+
+    <canvas id="minimap" width="200" height="200" title="Open map (M)"></canvas>
+    <div class="help muted small">WASD / arrows to walk · Shift to run · drag to look · scroll to zoom · M map · Q wave</div>
+    <div id="joystick" class="joystick"><div class="knob"></div></div>
+  </div>
+
+  <!-- Full map -->
+  <div id="fullmap" class="screen hidden">
+    <div class="fullmap-card">
+      <div class="fullmap-head"><strong>Map</strong><span class="muted small">Click anywhere to travel there</span><button class="close" data-close="fullmap">✕</button></div>
+      <div class="jump" id="jump-list"></div>
+      <canvas id="fullmap-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Connections drawer -->
+  <div id="social" class="drawer hidden">
+    <div class="drawer-head"><strong>Connections</strong><button class="close" data-close="social">✕</button></div>
+    <div id="social-body"></div>
+  </div>
+
+  <!-- Account modal -->
+  <div id="account" class="screen hidden">
+    <div class="card">
+      <div class="fullmap-head"><strong>Your profile</strong><button class="close" data-close="account">✕</button></div>
+      <form id="profile-form" class="form">
+        <label>Display name<input name="displayName" maxlength="24" required /></label>
+        <label>One-line bio<input name="bio" maxlength="140" /></label>
+        <label class="color-row">Your colour<input name="color" type="color" /></label>
+        <button class="primary" type="submit">Save</button>
+      </form>
+      <div id="profile-error" class="error"></div>
+      <button id="logout-btn" class="secondary">Sign out</button>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+  <div class="attribution">Map data © OpenStreetMap contributors, Overture Maps Foundation</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
