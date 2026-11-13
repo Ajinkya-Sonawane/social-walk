@@ -39,7 +39,7 @@
         <label>Display name<input name="displayName" maxlength="24" required /></label>
         <label>Password<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
         <label>One-line bio <span class="muted">(optional)</span><input name="bio" maxlength="140" placeholder="e.g. Grad student at MIT, into climbing" /></label>
-        <label class="color-row">Your colour<input name="color" type="color" value="#4f8cff" /></label>
+        <p class="muted small">Your character keeps the look you have now. Change it any time with the <strong>Look</strong> button.</p>
         <button class="primary" type="submit">Create account &amp; enter</button>
       </form>
       <div id="auth-error" class="error"></div>
@@ -60,6 +60,7 @@
       <div id="place" class="place"></div>
       <div class="actions">
         <span id="online" class="pill"></span>
+        <button id="look-btn" title="Change your character">Look</button>
         <button id="map-btn" title="Map (M)">Map</button>
         <button id="social-btn" title="Connections (C)">Connections <span id="req-count" class="count hidden"></span></button>
         <button id="account-btn"></button>
@@ -72,7 +73,7 @@
     </div>
 
     <canvas id="minimap" width="200" height="200" title="Open map (M)"></canvas>
-    <div class="help muted small">WASD / arrows to walk · Shift to run · drag to look · scroll to zoom · M map · Q wave</div>
+    <div class="help muted small">WASD / arrows to walk · Shift to run · drag to look · scroll to zoom · M map &amp; search · Q wave · G graphics</div>
     <div id="joystick" class="joystick"><div class="knob"></div></div>
   </div>
 
@@ -80,6 +81,7 @@
   <div id="fullmap" class="screen hidden">
     <div class="fullmap-card">
       <div class="fullmap-head"><strong>Map</strong><span class="muted small">Click anywhere to travel there</span><button class="close" data-close="fullmap">✕</button></div>
+      <div class="search"><input id="place-search" placeholder="Loading places…" disabled autocomplete="off" /><div id="search-results"></div></div>
       <div class="jump" id="jump-list"></div>
       <canvas id="fullmap-canvas"></canvas>
     </div>
@@ -98,11 +100,23 @@
       <form id="profile-form" class="form">
         <label>Display name<input name="displayName" maxlength="24" required /></label>
         <label>One-line bio<input name="bio" maxlength="140" /></label>
-        <label class="color-row">Your colour<input name="color" type="color" /></label>
         <button class="primary" type="submit">Save</button>
       </form>
       <div id="profile-error" class="error"></div>
       <button id="logout-btn" class="secondary">Sign out</button>
+    </div>
+  </div>
+
+  <!-- Look editor -->
+  <div id="lookmodal" class="screen hidden">
+    <div class="card look-card">
+      <div class="fullmap-head"><strong>Your character</strong><button class="close" data-close="lookmodal">✕</button></div>
+      <div class="look-layout">
+        <canvas id="look-preview"></canvas>
+        <div id="look-controls"></div>
+      </div>
+      <p id="look-note" class="muted small"></p>
+      <div class="btns end"><button id="look-random">Randomise</button><button id="look-save" class="primary">Save look</button></div>
     </div>
   </div>
 

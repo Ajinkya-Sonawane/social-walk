@@ -14,7 +14,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'social-web-'));
 let proc;
 
 before(async () => {
-  proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
+  proc = spawn(process.execPath, ['server/index.js'], {
     env: { ...process.env, PORT: String(PORT), DB_FILE: path.join(tmp, 'test.db'), SESSION_SECRET: 'test-secret' }, stdio: 'pipe',
   });
   await new Promise((res, rej) => { proc.stdout.on('data', (d) => String(d).includes('running') && res()); proc.on('exit', rej); });
@@ -102,6 +102,17 @@ test('accounts, presence, guest limits and connecting', async () => {
   const conns = (await call('/api/social', { cookie: a.cookie })).data.connections;
   assert.equal(conns.length, 1); assert.equal(conns[0].username, 'bob'); assert.ok(conns[0].online);
   assert.equal((await call('/api/social')).status, 401, 'guests have no social graph');
+
+  // appearance: everyone gets a look; guests can change theirs live, members via their profile
+  assert.ok(wg.you.look && wg.you.look.hairStyle, 'guests get a random look');
+  G.send({ t: 'look', look: { hairStyle: 'curly', top: 'hoodie', topColor: '#123456', skin: 99, pants: 'nope' } });
+  const gp = await A.next('profile', (m) => m.player.id === wg.you.id);
+  assert.equal(gp.player.look.hairStyle, 'curly'); assert.equal(gp.player.color, '#123456');
+  assert.ok(gp.player.look.skin < 6 && /^#/.test(gp.player.look.pants), 'invalid look fields are replaced');
+  const patched = await call('/api/me', { method: 'PATCH', body: { look: { hairStyle: 'cap', topColor: '#00ff00' } }, cookie: a.cookie });
+  assert.equal(patched.data.user.look.hairStyle, 'cap');
+  const ap = await B.next('profile', (m) => m.player.id === wa.you.id);
+  assert.equal(ap.player.look.topColor, '#00ff00');
 
   G.ws.close();
   await A.next('leave', (m) => m.id === wg.you.id);

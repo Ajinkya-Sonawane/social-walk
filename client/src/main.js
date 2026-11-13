@@ -1,26 +1,56 @@
 import * as THREE from 'three';
-import { loadCity } from './world.js';
-import { createAvatar, createEncounterRing } from './avatar.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { loadCity, buildDetails } from './world.js';
+import { createAvatar, createEncounterRing, createPreview } from './avatar.js';
 import { connectRealtime, api } from './net.js';
 import { createMaps } from './minimap.js';
+import { createNames } from './names.js';
+import { sanitizeLook, randomLook, SKIN_TONES, HAIR_STYLES, HAIR_COLORS, TOP_STYLES, PALETTES } from './look.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.72;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 $('#scene').appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-const SKY = new THREE.Color('#cfe3f3');
-scene.background = SKY;
-scene.fog = new THREE.Fog(SKY, 400, 2600);
-const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.3, 9000);
-scene.add(new THREE.HemisphereLight('#ffffff', '#b8b0a0', 1.6));
-const sun = new THREE.DirectionalLight('#fff4e0', 1.6);
-sun.position.set(-0.6, 1, 0.35);
-scene.add(sun);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.3, 12000);
+
+// Physically based sky with a late-morning sun; also used as the environment map so glass and
+// water reflect it and everything gets soft sky lighting.
+const SUN_DIR = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(200));
+const sky = new Sky();
+sky.scale.setScalar(10000);
+sky.material.uniforms.turbidity.value = 3.5;
+sky.material.uniforms.rayleigh.value = 1.4;
+sky.material.uniforms.mieCoefficient.value = 0.004;
+sky.material.uniforms.mieDirectionalG.value = 0.8;
+sky.material.uniforms.sunPosition.value.copy(SUN_DIR);
+scene.add(sky);
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  const envSky = new Sky(); envSky.scale.setScalar(1000); envSky.material.uniforms.sunPosition.value.copy(SUN_DIR);
+  for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) envSky.material.uniforms[k].value = sky.material.uniforms[k].value;
+  envScene.add(envSky);
+  scene.environment = pmrem.fromScene(envScene).texture;
+  scene.environmentIntensity = 0.3;
+}
+scene.fog = new THREE.Fog('#c5d3de', 500, 3200);
+scene.add(new THREE.HemisphereLight('#dfeaf5', '#6d6455', 0.45));
+const sun = new THREE.DirectionalLight('#fff1dc', 2.3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -130, right: 130, top: 130, bottom: -130, near: 10, far: 900 });
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.6;
+scene.add(sun, sun.target);
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 // ---------- state ----------
@@ -29,6 +59,8 @@ let user = null;          // signed-in account, or null for guests
 let me = null;            // {id, name, color, guest, userId}
 let myAvatar = null;
 let radius = 30;
+let names = null;         // real place/building/street names (loaded after the city)
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } } };
 const pos = { x: 0, z: 0, ry: 0 };
 const others = new Map(); // playerId -> remote player
 let social = { incoming: [], outgoing: [], connections: [] };
@@ -51,6 +83,12 @@ scene.add(ring);
   const common = world.landmarks.find((l) => l.name === 'Boston Common');
   Object.assign(pos, { x: common.x, z: common.z });
   $('#loading').classList.add('hidden');
+  // trees, lamps, benches and names stream in after the city is visible
+  fetch('/data/details.json').then((r) => r.json()).then((d) => {
+    scene.add(buildDetails(d, world));
+    names = createNames(d, world, $('#labels'));
+    setupSearch();
+  }).catch((e) => console.warn('details unavailable', e));
   try { user = (await api('/api/me')).user; } catch { user = null; }
   if (user) enterWorld(); else showWelcome(true);
   requestAnimationFrame(loop);
@@ -71,6 +109,7 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
 async function submitAuth(e, path) {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target));
+  if (path.includes('register')) body.look = me?.look || store.get('guestLook') || randomLook();
   const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true;
   try {
@@ -88,7 +127,7 @@ $('#guest-btn').addEventListener('click', () => { $('#welcome').classList.add('h
 $('#account-btn').addEventListener('click', () => {
   if (!user) return showWelcome(false);
   const f = $('#profile-form');
-  f.displayName.value = user.displayName; f.bio.value = user.bio; f.color.value = user.color;
+  f.displayName.value = user.displayName; f.bio.value = user.bio;
   $('#profile-error').textContent = '';
   $('#account').classList.remove('hidden');
 });
@@ -96,8 +135,7 @@ $('#profile-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
     user = (await api('/api/me', { method: 'PATCH', body: Object.fromEntries(new FormData(e.target)) })).user;
-    me.name = user.displayName; me.color = user.color;
-    myAvatar.userData.setColor(user.color);
+    me.name = user.displayName;
     updateHud();
     $('#account').classList.add('hidden');
     toast('Profile saved.');
@@ -123,7 +161,11 @@ function enterWorld() {
       ring.geometry.dispose(); ring.geometry = new THREE.RingGeometry(radius - 0.35, radius, 96);
       $('#radius').textContent = radius;
       if (myAvatar) scene.remove(myAvatar);
-      myAvatar = createAvatar(me); scene.add(myAvatar);
+      if (me.guest) {
+        const saved = store.get('guestLook');
+        if (saved) { me.look = sanitizeLook(saved); me.color = me.look.topColor; net.send({ t: 'look', look: me.look }); }
+      }
+      myAvatar = createAvatar({ look: me.look }); scene.add(myAvatar);
       teleport(m.spawn.x, m.spawn.z, false);
       for (const id of [...others.keys()]) removeOther(id);
       for (const p of m.players) addOther(p);
@@ -142,7 +184,7 @@ function enterWorld() {
     },
     profile(m) {
       const o = others.get(m.player.id); if (!o) return;
-      Object.assign(o, m.player); o.avatar.userData.setColor(m.player.color); o.labelDirty = true;
+      Object.assign(o, m.player); o.avatar.userData.setLook(m.player.look); o.labelDirty = true;
     },
     wave(m) {
       const o = m.id === me?.id ? null : others.get(m.id);
@@ -336,7 +378,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyM') $('#fullmap').classList.toggle('hidden');
   if (e.code === 'KeyC' && me) { $('#social').classList.toggle('hidden'); refreshSocial(); }
   if (e.code === 'KeyQ' && me) { if (me.guest) toast('Create an account to wave at people.'); else net.send({ t: 'wave' }); }
-  if (e.code === 'Escape') document.querySelectorAll('#fullmap, #social, #account').forEach((x) => x.classList.add('hidden'));
+  if (e.code === 'Escape') document.querySelectorAll('#fullmap, #social, #account, #lookmodal').forEach((x) => x.classList.add('hidden'));
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
@@ -450,10 +492,22 @@ function loop(now) {
   camera.lookAt(pos.x, 1.4, pos.z);
   scene.fog.near = 300 + cam.dist * 2; scene.fog.far = 2400 + cam.dist * 4;
 
-  renderer.render(scene, camera);
-  updateLabels();
+  // sun + shadow box follow you; the box grows when you zoom out
+  const ext = Math.min(500, Math.max(70, cam.dist * 1.6));
+  if (Math.abs(sun.shadow.camera.right - ext) > 5) {
+    Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, far: 600 + ext * 2 });
+    sun.shadow.camera.updateProjectionMatrix();
+  }
+  sun.target.position.set(pos.x, 0, pos.z);
+  sun.position.set(pos.x + SUN_DIR.x * (300 + ext), SUN_DIR.y * (300 + ext), pos.z + SUN_DIR.z * (300 + ext));
+  sky.position.set(pos.x, 0, pos.z);
 
-  if (now - lastNearby > 250) { lastNearby = now; updateNearby(); updatePlace(); }
+  renderer.render(scene, camera);
+  adaptQuality(now);
+  updateLabels();
+  names?.draw(camera, innerWidth, innerHeight);
+
+  if (now - lastNearby > 250) { lastNearby = now; updateNearby(); names?.refresh(pos.x, pos.z); updatePlace(); }
   if (me && now - lastMini > 100) {
     lastMini = now;
     const list = [...others.values()].map((o) => ({ x: o.cx, z: o.cz, color: o.color, guest: o.guest, userId: o.userId }));
@@ -501,6 +555,96 @@ function updatePlace() {
   if (!world) return;
   let best = null, bd = Infinity;
   for (const l of world.landmarks) { const d = Math.hypot(l.x - pos.x, l.z - pos.z); if (d < bd) { bd = d; best = l; } }
-  const txt = bd < 900 ? `📍 ${best.name}` : '📍 Boston';
+  const area = bd < 900 ? best.name : 'Boston';
+  const street = names?.street;
+  const txt = street ? `📍 ${street} · ${area}` : `📍 ${area}`;
   if (txt !== lastPlace) { $('#place').textContent = txt; lastPlace = txt; }
 }
+
+// ---------- place search (on the map) ----------
+function setupSearch() {
+  const input = $('#place-search'), list = $('#search-results');
+  input.disabled = false; input.placeholder = 'Find a place, shop or restaurant…';
+  input.addEventListener('input', () => {
+    const res = names.search(input.value);
+    list.innerHTML = res.map((r, i) => `<button data-i="${i}"><span>${r.cat.icon}</span> ${esc(r.name)} <span class="muted small">${esc(r.cat.name)}</span></button>`).join('');
+    list.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      const r = res[Number(b.dataset.i)];
+      teleport(r.x, r.z); $('#fullmap').classList.add('hidden'); input.value = ''; list.innerHTML = '';
+      toast(`Travelled to ${esc(r.name)}.`);
+    };
+  });
+}
+
+// ---------- look editor ----------
+let preview = null, draft = null;
+function openLook() {
+  draft = sanitizeLook(me?.look);
+  $('#lookmodal').classList.remove('hidden');
+  preview = preview || createPreview($('#look-preview'));
+  preview.show(draft);
+  renderLookControls();
+  $('#look-note').textContent = user ? '' : 'Guests can dress up too. Your look is saved in this browser and carried over if you create an account.';
+}
+function swatches(key, colors, isIndex) {
+  return `<div class="swatches">${colors.map((c, i) => {
+    const val = isIndex ? i : c, on = draft[key] === val;
+    return `<button class="sw${on ? ' on' : ''}" style="background:${c}" data-k="${key}" data-v="${val}" title="${c}"></button>`;
+  }).join('')}${isIndex ? '' : `<label class="sw custom" title="Pick any colour"><input type="color" data-k="${key}" value="${draft[key]}"></label>`}</div>`;
+}
+function chips(key, options) {
+  return `<div class="chips">${options.map((o) => `<button class="chip${draft[key] === o ? ' on' : ''}" data-k="${key}" data-v="${o}">${o}</button>`).join('')}</div>`;
+}
+function renderLookControls() {
+  $('#look-controls').innerHTML = `
+    <div class="look-row"><div class="look-label">Skin</div>${swatches('skin', SKIN_TONES, true)}</div>
+    <div class="look-row"><div class="look-label">Hair</div>${chips('hairStyle', HAIR_STYLES)}</div>
+    <div class="look-row"><div class="look-label">Hair colour</div>${swatches('hair', HAIR_COLORS)}</div>
+    <div class="look-row"><div class="look-label">Top</div>${chips('top', TOP_STYLES)}</div>
+    <div class="look-row"><div class="look-label">Top colour</div>${swatches('topColor', PALETTES.tops)}</div>
+    <div class="look-row"><div class="look-label">Trousers</div>${swatches('pants', PALETTES.pants)}</div>
+    <div class="look-row"><div class="look-label">Shoes</div>${swatches('shoes', PALETTES.shoes)}</div>`;
+}
+$('#look-controls').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-k]'); if (!b) return;
+  const k = b.dataset.k; draft[k] = k === 'skin' ? Number(b.dataset.v) : b.dataset.v;
+  preview.show(draft); renderLookControls();
+});
+$('#look-controls').addEventListener('input', (e) => {
+  if (!e.target.dataset.k) return;
+  draft[e.target.dataset.k] = e.target.value; preview.show(draft);
+});
+$('#look-random').addEventListener('click', () => { draft = randomLook(); preview.show(draft); renderLookControls(); });
+$('#look-save').addEventListener('click', async () => {
+  const look = sanitizeLook(draft);
+  try {
+    if (user) user = (await api('/api/me', { method: 'PATCH', body: { look } })).user;
+    else { store.set('guestLook', look); net?.send({ t: 'look', look }); }
+    me.look = look; me.color = look.topColor;
+    myAvatar.userData.setLook(look); myAvatar.userData.wave();
+    updateHud();
+    $('#lookmodal').classList.add('hidden'); preview.stop();
+  } catch (err) { toast(esc(err.message)); }
+});
+$('#look-btn').addEventListener('click', () => { if (me) openLook(); });
+document.querySelector('[data-close="lookmodal"]').addEventListener('click', () => preview?.stop());
+
+// ---------- graphics quality ----------
+// Shadows and full-res rendering are the expensive parts. If the first seconds in the city run
+// slowly, drop to "fast" mode automatically; G toggles it by hand.
+let frames = 0, qStart = 0, qDecided = false;
+function setQuality(high, announce) {
+  sun.castShadow = high;
+  renderer.setPixelRatio(high ? Math.min(devicePixelRatio, 2) : 1);
+  renderer.setSize(innerWidth, innerHeight);
+  store.set('quality', high ? 'high' : 'fast');
+  if (announce) toast(high ? 'Graphics: detailed (shadows on). Press G to switch.' : 'Graphics: fast (shadows off). Press G to switch.');
+}
+function adaptQuality(now) {
+  if (qDecided || !me) return;
+  if (!qStart) { qStart = now; const saved = store.get('quality'); if (saved) { qDecided = true; setQuality(saved === 'high', false); } return; }
+  frames++;
+  if (now - qStart > 4000) { qDecided = true; if (frames / 4 < 24) setQuality(false, true); }
+}
+addEventListener('keydown', (e) => { if (e.code === 'KeyG' && !typing()) { qDecided = true; setQuality(!sun.castShadow, true); } });

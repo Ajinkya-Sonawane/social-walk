@@ -23,11 +23,11 @@ export function createMaps(world, { miniCanvas, fullCanvas }) {
   const widths = [3.2, 2.4, 1.8, 1.2, 0.8], colors = ['#f2b45a', '#ffffff', '#ffffff', '#ffffff', '#f6f3ec'];
   for (let cls = 4; cls >= 0; cls--) {
     g.strokeStyle = colors[cls]; g.lineWidth = widths[cls]; g.lineCap = 'round'; g.beginPath();
-    for (const r of data.roads) { if (r[0] !== cls) continue; for (let k = 1; k < r.length; k += 2) (k === 1 ? g.moveTo : g.lineTo).call(g, px(r[k]), pz(-r[k + 1])); }
+    for (const r of data.roads) { if (r[0] !== cls) continue; for (let k = 2; k < r.length; k += 2) (k === 2 ? g.moveTo : g.lineTo).call(g, px(r[k]), pz(-r[k + 1])); }
     g.stroke();
   }
   g.fillStyle = '#c9c1b4';
-  for (const b of data.buildings) { g.beginPath(); for (let k = 1; k < b.length; k += 2) (k === 1 ? g.moveTo : g.lineTo).call(g, px(b[k]), pz(-b[k + 1])); g.fill(); }
+  for (const b of data.buildings) { g.beginPath(); for (let k = 2; k < b.length; k += 2) (k === 2 ? g.moveTo : g.lineTo).call(g, px(b[k]), pz(-b[k + 1])); g.fill(); }
 
   const mctx = miniCanvas.getContext('2d');
   const fctx = fullCanvas.getContext('2d');

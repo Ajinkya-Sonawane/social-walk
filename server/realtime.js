@@ -2,17 +2,17 @@
 import { WebSocketServer } from 'ws';
 import crypto from 'node:crypto';
 import { parseCookies } from './auth.js';
+import { sanitizeLook, randomLook } from '../client/src/look.js';
 
 export const ENCOUNTER_RADIUS = 30; // metres: how close two people must be to send a connection request
 const TICK_MS = 100;                // snapshot broadcast rate (10 Hz)
-const GUEST_COLORS = ['#e07a5f', '#81b29a', '#f2cc8f', '#3d9be9', '#b388eb', '#ef8354', '#5fb49c', '#d4a5a5'];
 
 export function attachRealtime({ server, db, sessions, world }) {
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
   const players = new Map();     // playerId -> player
   const byUser = new Map();      // userId -> playerId
 
-  const pub = (p) => ({ id: p.id, name: p.name, color: p.color, guest: p.guest, userId: p.userId, bio: p.bio });
+  const pub = (p) => ({ id: p.id, name: p.name, color: p.color, guest: p.guest, userId: p.userId, bio: p.bio, look: p.look });
   const send = (p, msg) => { if (p.ws.readyState === 1) p.ws.send(JSON.stringify(msg)); };
   const broadcast = (msg, except) => { const s = JSON.stringify(msg); for (const p of players.values()) if (p !== except && p.ws.readyState === 1) p.ws.send(s); };
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -35,11 +35,13 @@ export function attachRealtime({ server, db, sessions, world }) {
       userId: user ? user.id : null,
       guest: !user,
       name: user ? user.display_name : `Guest ${1000 + crypto.randomInt(9000)}`,
-      color: user ? user.color : GUEST_COLORS[crypto.randomInt(GUEST_COLORS.length)],
+      look: user ? parseUserLook(user) : randomLook(),
+      color: '',
       bio: user ? user.bio : '',
       x: spawn.x, z: spawn.z, ry: 0, a: 0,
       lastSaved: 0,
     };
+    p.color = user ? user.color : p.look.topColor;
     players.set(id, p);
     if (user) byUser.set(user.id, id);
 
@@ -59,6 +61,12 @@ export function attachRealtime({ server, db, sessions, world }) {
           break;
         }
         case 'connect': return handleConnect(p, msg.target);
+        case 'look': { // guests can dress up too (members save theirs via PATCH /api/me)
+          if (!p.guest) return;
+          p.look = sanitizeLook(msg.look, p.look); p.color = p.look.topColor;
+          broadcast({ t: 'profile', player: pub(p) });
+          break;
+        }
         case 'wave': { // small greeting emote, registered users only
           if (p.guest) return send(p, { t: 'err', msg: 'Create an account to interact with people.' });
           broadcast({ t: 'wave', id: p.id });
@@ -121,9 +129,11 @@ export function attachRealtime({ server, db, sessions, world }) {
     updateProfile(userId, user) {
       const p = players.get(byUser.get(userId));
       if (!p) return;
-      Object.assign(p, { name: user.display_name, color: user.color, bio: user.bio });
+      Object.assign(p, { name: user.display_name, color: user.color, bio: user.bio, look: parseUserLook(user) });
       broadcast({ t: 'profile', player: pub(p) });
     },
     stats: () => ({ online: players.size, guests: [...players.values()].filter((p) => p.guest).length }),
   };
 }
+
+function parseUserLook(u) { try { return sanitizeLook(JSON.parse(u.look)); } catch { return sanitizeLook(null); } }
